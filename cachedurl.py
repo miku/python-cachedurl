@@ -1,0 +1,207 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+General purpose filesystem URL caching. 
+=======================================
+
+Note: We are not backwards-compatible, 
+	we need python 2.5+ (hashlib)
+
+Sample usage
+------------
+
+from cachedurl import URLCache
+
+cache = URLCache() # get a cache instance
+
+page = cache.get("http://www.heise.de")
+page, hit = cache.get("http://www.heise.de", hit=True)
+
+Defaults
+========
+
+directory = $HOME/.cachedurlcache
+user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+compress = True
+invalidate = 604800
+debug = False
+enabled = True
+proxy = None
+rotating_user_agent = False
+user_agent_list = [
+	'Opera/9.0 (Windows NT 5.1; U; en) ',
+	'Avant Browser (http://www.avantbrowser.com)',
+	'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+	]
+"""
+
+from __future__ import division
+from hashlib import sha256
+from stat import ST_MTIME
+from time import time
+
+import bz2, os, sys, urllib2, random
+
+DEFAULT_CACHE_DIRECTORY = ".cachedurlcache"
+
+
+class CacheFailed(Exception):
+	""" General and uninformative Exception.
+	"""
+	def __init__(self, value):
+		self.value = value
+	def __str__(self):
+		return repr(self.value)
+	
+class URLCache(object):
+	""" General (optionally) bzip2'd sha256-identified cache repository.
+	"""
+	def __init__(self, directory='{0}/{1}'.format(
+				os.environ['HOME'], DEFAULT_CACHE_DIRECTORY), 
+			user_agent='Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)',
+			compress=True,
+			invalidate=604800,
+			debug=False,
+			proxy=None,
+			rotating_user_agent=False):
+			
+		start = time()
+		
+		self.directory = directory
+		self.user_agent = user_agent
+		self.enabled = True
+		self.compress = compress
+		self.invalidate = invalidate
+		self.debug = debug
+		self.proxy = proxy
+		self.rotating_user_agent=rotating_user_agent
+		
+		self.user_agent_list = [
+			'Opera/9.0 (Windows NT 5.1; U; en) ',
+			'Avant Browser (http://www.avantbrowser.com)',
+			'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+		]
+		
+		self.prepare()
+		if debug:
+			print >> sys.stderr, '[Cache] Cache up: %f' % (time() - start)
+
+	def prepare(self):
+		"""
+		Check, if cache dir exists.
+		"""
+		if not os.path.exists(self.directory):
+			try:
+				os.makedirs(self.directory)
+			except IOError, e:
+				raise CacheFailed('CachedURL, could not create cache dir.')
+				self.enabled = False
+	
+	def get_cache_file_dir(self, cache_filename, create=True):
+		"""
+		Returns the subdirectory for the cached file name. 
+		We split the sha256 sum of the url up into a 16 char prefix and the rest.
+		The 16 chars will form the directory, e.g.
+			fee9548909ac73ccbb560e887ab3cbca190cfad80a7b12b2574f96fa223e7e12
+		would become
+			fe/
+		
+		so each directory has no more the 2 subdirectories, should be handable by ext3
+		"""
+		_prefix = cache_filename[:2] # [ c for c in cache_filename ][:2]
+		_path = _prefix # '/'.join(_prefix)
+		_dir = os.path.join(self.directory, _path)
+		if not os.path.exists(_dir) and create:
+			try:
+				os.makedirs(_dir)
+			except IOError, e:
+				raise CacheFailed(
+					'We could not create cache directory {0}'.format(_dir))
+		return _dir
+	
+	def get(self, url, hit=False):
+		"""
+		Retrieve URL.
+		"""
+		if not self.enabled:
+			return
+		contents, cache_hit = None, False
+		fun = sha256()
+		fun.update(url)
+		
+		hxd = fun.hexdigest()
+		if self.compress:
+			cache_candidate = os.path.join(
+				self.get_cache_file_dir(hxd), '%s.bz2' % hxd)
+		else:
+			cache_candidate = os.path.join(self.get_cache_file_dir(hxd), hxd)
+
+		try:
+			if (os.path.exists(cache_candidate) 
+				and self.entry_is_valid(cache_candidate)):
+				
+				start = time()
+				fh = open(cache_candidate, 'r')
+				contents = fh.read()
+				if self.compress: contents = bz2.decompress(contents)
+				fh.close()
+				if self.debug:
+					print >> sys.stderr, \
+						'[Cache] Cache hit: {0} {1} [{2}]'.format(
+							url, cache_candidate, time() - start)
+				cache_hit = True
+			else:
+				start = time()
+				req = urllib2.Request(url)
+				if not self.proxy == None:
+					proxy_support = urllib2.ProxyHandler(
+						{'http' : self.proxy})
+					opener = urllib2.build_opener(proxy_support)
+					urllib2.install_opener(opener)
+				if self.debug:
+					print >> sys.stderr, \
+						'[Cache] Cache: Retrieving {0}'.format(url)
+				if self.rotating_user_agent:
+					self.user_agent = random.choice(self.user_agent_list)
+				else:
+					self.user_agent = self.user_agent_list[0]
+				req.add_header('User-Agent', self.user_agent)
+				contents = urllib2.urlopen(req).read()
+				fh = open(cache_candidate, 'w')
+				if self.compress: fh.write(bz2.compress(contents))
+				fh.write(contents)
+				fh.close()
+				if self.debug:
+					print >> sys.stderr, \
+						'[Cache] Cache: Retreived {0} [{1}]'.format(
+							url, time() - start)
+			if hit:
+				return (contents, cache_hit)
+			else:
+				return contents
+		except Exception, e:
+			raise CacheFailed('Cache Failed: {0}'.format())
+	
+	def entry_is_valid(self, filename):
+		""" Check if file is up to date. 
+			See also: cache ``invalidate`` attribute.
+		"""
+		if self.invalidate == 0: return True
+		return (time() - os.stat(filename)[ST_MTIME]) < self.invalidate
+
+	def stats(self):
+		""" Just some stats.
+		"""
+		overall = 0
+		for root, dirs, files in os.walk(self.directory):
+			subsum = sum(os.path.getsize(os.path.join(root, name)) 
+				for name in files)
+			overall += subsum
+			if subsum: 
+				print root, "consumes %10.3fM" % (s / 1024 / 1024), \
+					"bytes in", len(files), "files"
+		print "\nOverall %5.3fM cached." % (overall / 1024 / 1024)
+
+if __name__ == '__main__':
+	pass
