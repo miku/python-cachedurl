@@ -19,7 +19,7 @@ page = cache.get("http://www.heise.de")
 page, hit = cache.get("http://www.heise.de", hit=True)
 
 Defaults
-========
+--------
 
 directory = $HOME/.cachedurlcache
 user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
@@ -34,6 +34,20 @@ user_agent_list = [
     'Avant Browser (http://www.avantbrowser.com)',
     'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
     ]
+
+Todo
+----
+
+$ pylint cachedurl.py
+2 R: 58:URLCache: Too many instance attributes (9/7)
+3 R: 61:URLCache.__init__: Too many arguments (8/5)
+4 R:127:URLCache.get: Too many branches (16/12)
+5 W:204:URLCache.stats: Unused variable 'dirs'
+
+...
+
+Your code has been rated at 9.62/10 (previous run: 9.62/10)
+
 """
 
 from __future__ import division
@@ -50,6 +64,7 @@ class CacheFailed(Exception):
     """ General and uninformative Exception.
     """
     def __init__(self, value):
+        super(CacheFailed, self).__init__()
         self.value = value
     def __str__(self):
         return repr(self.value)
@@ -75,7 +90,7 @@ class URLCache(object):
         self.invalidate = invalidate
         self.debug = debug
         self.proxy = proxy
-        self.rotating_user_agent=rotating_user_agent
+        self.rotating_user_agent = rotating_user_agent
         
         self.user_agent_list = [
             'Opera/9.0 (Windows NT 5.1; U; en) ',
@@ -94,9 +109,11 @@ class URLCache(object):
         if not os.path.exists(self.directory):
             try:
                 os.makedirs(self.directory)
-            except IOError, e:
-                raise CacheFailed('CachedURL, could not create cache dir.')
+            except IOError, ioe:
                 self.enabled = False
+                raise CacheFailed(
+                    'CachedURL, could not create cache dir. {0}'.format(ioe))
+                
     
     def get_cache_file_dir(self, cache_filename, create=True):
         """
@@ -115,9 +132,10 @@ class URLCache(object):
         if not os.path.exists(_dir) and create:
             try:
                 os.makedirs(_dir)
-            except IOError, e:
+            except IOError, ioe:
                 raise CacheFailed(
-                    'We could not create cache directory {0}'.format(_dir))
+                    'We could not create cache directory {0} {1}'.format(
+                        _dir, ioe))
         return _dir
     
     def get(self, url, hit=False):
@@ -142,10 +160,11 @@ class URLCache(object):
                 and self.entry_is_valid(cache_candidate)):
                 
                 start = time()
-                fh = open(cache_candidate, 'r')
-                contents = fh.read()
-                if self.compress: contents = bz2.decompress(contents)
-                fh.close()
+                handle = open(cache_candidate, 'r')
+                contents = handle.read()
+                if self.compress: 
+                    contents = bz2.decompress(contents)
+                handle.close()
                 if self.debug:
                     print >> sys.stderr, \
                         '[Cache] Cache hit: {0} {1} [{2}]'.format(
@@ -168,10 +187,11 @@ class URLCache(object):
                     self.user_agent = self.user_agent_list[0]
                 req.add_header('User-Agent', self.user_agent)
                 contents = urllib2.urlopen(req).read()
-                fh = open(cache_candidate, 'w')
-                if self.compress: fh.write(bz2.compress(contents))
-                fh.write(contents)
-                fh.close()
+                handle = open(cache_candidate, 'w')
+                if self.compress:
+                    handle.write(bz2.compress(contents))
+                handle.write(contents)
+                handle.close()
                 if self.debug:
                     print >> sys.stderr, \
                         '[Cache] Cache: Retreived {0} [{1}]'.format(
@@ -180,14 +200,15 @@ class URLCache(object):
                 return (contents, cache_hit)
             else:
                 return contents
-        except Exception, e:
-            raise CacheFailed('Cache Failed: {0}'.format())
+        except Exception, exc:
+            raise CacheFailed('Cache Failed: {0}'.format(exc))
     
     def entry_is_valid(self, filename):
         """ Check if file is up to date. 
             See also: cache ``invalidate`` attribute.
         """
-        if self.invalidate == 0: return True
+        if self.invalidate == 0:
+            return True
         return (time() - os.stat(filename)[ST_MTIME]) < self.invalidate
 
     def stats(self):
@@ -199,9 +220,10 @@ class URLCache(object):
                 for name in files)
             overall += subsum
             if subsum: 
-                print root, "consumes %10.3fM" % (s / 1024 / 1024), \
+                print root, "consumes %10.3fM" % (subsum / 1024 / 1024), \
                     "bytes in", len(files), "files"
         print "\nOverall %5.3fM cached." % (overall / 1024 / 1024)
 
 if __name__ == '__main__':
     pass
+

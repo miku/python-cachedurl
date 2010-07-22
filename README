@@ -15,12 +15,12 @@ page = cache.get("http://www.heise.de")
 page, hit = cache.get("http://www.heise.de", hit=True)
 
 Defaults
-========
+--------
 
 directory = $HOME/.cachedurlcache
 user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
-compress = True # use bzip2 compression
-invalidate = 604800 # seconds
+compress = True
+invalidate = 604800
 debug = False
 enabled = True
 proxy = None
@@ -30,3 +30,17 @@ user_agent_list = [
     'Avant Browser (http://www.avantbrowser.com)',
     'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
     ]
+
+Todo
+----
+
+$ pylint cachedurl.py
+2 R: 58:URLCache: Too many instance attributes (9/7)
+3 R: 61:URLCache.__init__: Too many arguments (8/5)
+4 R:127:URLCache.get: Too many branches (16/12)
+5 W:204:URLCache.stats: Unused variable 'dirs'
+
+...
+
+Your code has been rated at 9.62/10 (previous run: 9.62/10)
+
