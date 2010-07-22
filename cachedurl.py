@@ -190,7 +190,8 @@ class URLCache(object):
                 handle = open(cache_candidate, 'w')
                 if self.compress:
                     handle.write(bz2.compress(contents))
-                handle.write(contents)
+                else:
+                    handle.write(contents)
                 handle.close()
                 if self.debug:
                     print >> sys.stderr, \
