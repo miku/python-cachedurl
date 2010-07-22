@@ -1,0 +1,32 @@
+General purpose filesystem URL caching. 
+=======================================
+
+Note: We are not backwards-compatible, 
+    we need python 2.5+ (hashlib)
+
+Sample usage
+------------
+
+from cachedurl import URLCache
+
+cache = URLCache() # get a cache instance
+
+page = cache.get("http://www.heise.de")
+page, hit = cache.get("http://www.heise.de", hit=True)
+
+Defaults
+========
+
+directory = $HOME/.cachedurlcache
+user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+compress = True # use bzip2 compression
+invalidate = 604800 # seconds
+debug = False
+enabled = True
+proxy = None
+rotating_user_agent = False
+user_agent_list = [
+    'Opera/9.0 (Windows NT 5.1; U; en) ',
+    'Avant Browser (http://www.avantbrowser.com)',
+    'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+    ]
